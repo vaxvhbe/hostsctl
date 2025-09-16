@@ -1,0 +1,561 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/vaxvhbe/hostsctl/internal/hosts"
+	"github.com/vaxvhbe/hostsctl/internal/lock"
+	"github.com/vaxvhbe/hostsctl/pkg"
+	"gopkg.in/yaml.v3"
+)
+
+type CLI struct {
+	hostsFile  string
+	noColor    bool
+	jsonOutput bool
+}
+
+func NewCLI() *CLI {
+	return &CLI{
+		hostsFile: "/etc/hosts",
+	}
+}
+
+func (c *CLI) Execute() error {
+	rootCmd := c.buildRootCommand()
+	return rootCmd.Execute()
+}
+
+func (c *CLI) buildRootCommand() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "hostsctl",
+		Short: "A CLI manager for /etc/hosts",
+		Long:  "hostsctl is a command-line tool for safely managing entries in /etc/hosts files.",
+	}
+
+	rootCmd.PersistentFlags().StringVar(&c.hostsFile, "hosts-file", "/etc/hosts", "Path to hosts file")
+	rootCmd.PersistentFlags().BoolVar(&c.noColor, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().BoolVar(&c.jsonOutput, "json", false, "Output in JSON format")
+
+	rootCmd.AddCommand(c.buildListCommand())
+	rootCmd.AddCommand(c.buildAddCommand())
+	rootCmd.AddCommand(c.buildRemoveCommand())
+	rootCmd.AddCommand(c.buildEnableCommand())
+	rootCmd.AddCommand(c.buildDisableCommand())
+	rootCmd.AddCommand(c.buildBackupCommand())
+	rootCmd.AddCommand(c.buildRestoreCommand())
+	rootCmd.AddCommand(c.buildImportCommand())
+	rootCmd.AddCommand(c.buildExportCommand())
+	rootCmd.AddCommand(c.buildVerifyCommand())
+
+	return rootCmd
+}
+
+func (c *CLI) buildListCommand() *cobra.Command {
+	var showAll bool
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List hosts entries",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runList(showAll)
+		},
+	}
+
+	cmd.Flags().BoolVar(&showAll, "all", false, "Show all entries including disabled ones")
+	return cmd
+}
+
+func (c *CLI) buildAddCommand() *cobra.Command {
+	var ip, comment string
+	var names []string
+
+	cmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add a new hosts entry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runAdd(ip, names, comment)
+		},
+	}
+
+	cmd.Flags().StringVar(&ip, "ip", "", "IP address (required)")
+	cmd.Flags().StringSliceVar(&names, "name", []string{}, "Hostname(s) (required, can be specified multiple times)")
+	cmd.Flags().StringVar(&comment, "comment", "", "Comment for the entry")
+	cmd.MarkFlagRequired("ip")
+	cmd.MarkFlagRequired("name")
+
+	return cmd
+}
+
+func (c *CLI) buildRemoveCommand() *cobra.Command {
+	var name string
+	var id int
+
+	cmd := &cobra.Command{
+		Use:   "rm",
+		Short: "Remove hosts entry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runRemove(id, name)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Remove by hostname")
+	cmd.Flags().IntVar(&id, "id", 0, "Remove by entry ID")
+
+	return cmd
+}
+
+func (c *CLI) buildEnableCommand() *cobra.Command {
+	var name string
+	var id int
+
+	cmd := &cobra.Command{
+		Use:   "enable",
+		Short: "Enable hosts entry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runEnable(id, name)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Enable by hostname")
+	cmd.Flags().IntVar(&id, "id", 0, "Enable by entry ID")
+
+	return cmd
+}
+
+func (c *CLI) buildDisableCommand() *cobra.Command {
+	var name string
+	var id int
+
+	cmd := &cobra.Command{
+		Use:   "disable",
+		Short: "Disable hosts entry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runDisable(id, name)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Disable by hostname")
+	cmd.Flags().IntVar(&id, "id", 0, "Disable by entry ID")
+
+	return cmd
+}
+
+func (c *CLI) buildBackupCommand() *cobra.Command {
+	var output string
+
+	cmd := &cobra.Command{
+		Use:   "backup",
+		Short: "Create a backup of hosts file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runBackup(output)
+		},
+	}
+
+	cmd.Flags().StringVar(&output, "out", "", "Output path for backup")
+	return cmd
+}
+
+func (c *CLI) buildRestoreCommand() *cobra.Command {
+	var file string
+
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Restore hosts file from backup",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runRestore(file)
+		},
+	}
+
+	cmd.Flags().StringVar(&file, "file", "", "Backup file to restore from (required)")
+	cmd.MarkFlagRequired("file")
+
+	return cmd
+}
+
+func (c *CLI) buildImportCommand() *cobra.Command {
+	var file, format string
+
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Import hosts entries from file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runImport(file, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&file, "file", "", "File to import from (required)")
+	cmd.Flags().StringVar(&format, "format", "json", "Import format (json|yaml)")
+	cmd.MarkFlagRequired("file")
+
+	return cmd
+}
+
+func (c *CLI) buildExportCommand() *cobra.Command {
+	var file, format string
+
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export hosts entries to file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runExport(file, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&file, "file", "", "File to export to (required)")
+	cmd.Flags().StringVar(&format, "format", "json", "Export format (json|yaml)")
+	cmd.MarkFlagRequired("file")
+
+	return cmd
+}
+
+func (c *CLI) buildVerifyCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify hosts file syntax and check for issues",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return c.runVerify()
+		},
+	}
+
+	return cmd
+}
+
+func (c *CLI) runList(showAll bool) error {
+	store := hosts.NewStore(c.hostsFile, false)
+
+	hostsFile, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load hosts file: %w", err)
+	}
+
+	if c.jsonOutput {
+		entries := hostsFile.Entries
+		if !showAll {
+			entries = c.filterEnabled(entries)
+		}
+		return json.NewEncoder(os.Stdout).Encode(entries)
+	}
+
+	c.printEntries(hostsFile.Entries, showAll)
+	return nil
+}
+
+func (c *CLI) runAdd(ip string, names []string, comment string) error {
+	if err := pkg.ValidateIP(ip); err != nil {
+		return fmt.Errorf("invalid IP: %s", err.Message)
+	}
+
+	if errs := pkg.ValidateHostnames(names); len(errs) > 0 {
+		return fmt.Errorf("invalid hostnames: %s", errs[0].Message)
+	}
+
+	if comment != "" {
+		if err := pkg.ValidateComment(comment); err != nil {
+			return fmt.Errorf("invalid comment: %s", err.Message)
+		}
+	}
+
+	return lock.WithQuickLock(c.hostsFile, func() error {
+		store := hosts.NewStore(c.hostsFile, false)
+
+		hostsFile, err := store.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load hosts file: %w", err)
+		}
+
+		entry := hosts.Entry{
+			IP:      pkg.NormalizeIP(ip),
+			Names:   names,
+			Comment: comment,
+		}
+
+		hostsFile.AddEntry(entry)
+
+		if err := store.Save(hostsFile); err != nil {
+			return fmt.Errorf("failed to save hosts file: %w", err)
+		}
+
+		fmt.Printf("Added entry: %s -> %s\n", entry.IP, strings.Join(entry.Names, ", "))
+		return nil
+	})
+}
+
+func (c *CLI) runRemove(id int, name string) error {
+	if id == 0 && name == "" {
+		return fmt.Errorf("either --id or --name must be specified")
+	}
+
+	return lock.WithQuickLock(c.hostsFile, func() error {
+		store := hosts.NewStore(c.hostsFile, false)
+
+		hostsFile, err := store.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load hosts file: %w", err)
+		}
+
+		if id != 0 {
+			if !hostsFile.RemoveEntry(id) {
+				return fmt.Errorf("entry with ID %d not found", id)
+			}
+			fmt.Printf("Removed entry with ID %d\n", id)
+		} else {
+			entries := hostsFile.FindByName(name)
+			if len(entries) == 0 {
+				return fmt.Errorf("no entries found with hostname %s", name)
+			}
+
+			for _, entry := range entries {
+				hostsFile.RemoveEntry(entry.ID)
+				fmt.Printf("Removed entry with ID %d (%s)\n", entry.ID, name)
+			}
+		}
+
+		return store.Save(hostsFile)
+	})
+}
+
+func (c *CLI) runEnable(id int, name string) error {
+	if id == 0 && name == "" {
+		return fmt.Errorf("either --id or --name must be specified")
+	}
+
+	return lock.WithQuickLock(c.hostsFile, func() error {
+		store := hosts.NewStore(c.hostsFile, false)
+
+		hostsFile, err := store.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load hosts file: %w", err)
+		}
+
+		if id != 0 {
+			if !hostsFile.EnableEntry(id) {
+				return fmt.Errorf("entry with ID %d not found", id)
+			}
+			fmt.Printf("Enabled entry with ID %d\n", id)
+		} else {
+			entries := hostsFile.FindByName(name)
+			if len(entries) == 0 {
+				return fmt.Errorf("no entries found with hostname %s", name)
+			}
+
+			for _, entry := range entries {
+				hostsFile.EnableEntry(entry.ID)
+				fmt.Printf("Enabled entry with ID %d (%s)\n", entry.ID, name)
+			}
+		}
+
+		return store.Save(hostsFile)
+	})
+}
+
+func (c *CLI) runDisable(id int, name string) error {
+	if id == 0 && name == "" {
+		return fmt.Errorf("either --id or --name must be specified")
+	}
+
+	return lock.WithQuickLock(c.hostsFile, func() error {
+		store := hosts.NewStore(c.hostsFile, false)
+
+		hostsFile, err := store.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load hosts file: %w", err)
+		}
+
+		if id != 0 {
+			if !hostsFile.DisableEntry(id) {
+				return fmt.Errorf("entry with ID %d not found", id)
+			}
+			fmt.Printf("Disabled entry with ID %d\n", id)
+		} else {
+			entries := hostsFile.FindByName(name)
+			if len(entries) == 0 {
+				return fmt.Errorf("no entries found with hostname %s", name)
+			}
+
+			for _, entry := range entries {
+				hostsFile.DisableEntry(entry.ID)
+				fmt.Printf("Disabled entry with ID %d (%s)\n", entry.ID, name)
+			}
+		}
+
+		return store.Save(hostsFile)
+	})
+}
+
+func (c *CLI) runBackup(output string) error {
+	store := hosts.NewStore(c.hostsFile, false)
+
+	backup, err := store.Backup(output)
+	if err != nil {
+		return fmt.Errorf("failed to create backup: %w", err)
+	}
+
+	if c.jsonOutput {
+		return json.NewEncoder(os.Stdout).Encode(backup)
+	}
+
+	fmt.Printf("Backup created: %s\n", backup.Path)
+	fmt.Printf("Size: %d bytes\n", backup.Size)
+	fmt.Printf("Created: %s\n", backup.CreatedAt.Format(time.RFC3339))
+	return nil
+}
+
+func (c *CLI) runRestore(file string) error {
+	return lock.WithQuickLock(c.hostsFile, func() error {
+		store := hosts.NewStore(c.hostsFile, false)
+
+		if err := store.Restore(file); err != nil {
+			return fmt.Errorf("failed to restore from backup: %w", err)
+		}
+
+		fmt.Printf("Restored hosts file from: %s\n", file)
+		return nil
+	})
+}
+
+func (c *CLI) runImport(file, format string) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("failed to read import file: %w", err)
+	}
+
+	var profile hosts.Profile
+	switch format {
+	case "json":
+		err = json.Unmarshal(data, &profile)
+	case "yaml":
+		err = yaml.Unmarshal(data, &profile)
+	default:
+		return fmt.Errorf("unsupported format: %s", format)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to parse import file: %w", err)
+	}
+
+	return lock.WithQuickLock(c.hostsFile, func() error {
+		store := hosts.NewStore(c.hostsFile, false)
+
+		hostsFile, err := store.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load hosts file: %w", err)
+		}
+
+		for _, entry := range profile.Entries {
+			hostsFile.AddEntry(entry)
+		}
+
+		if err := store.Save(hostsFile); err != nil {
+			return fmt.Errorf("failed to save hosts file: %w", err)
+		}
+
+		fmt.Printf("Imported %d entries from %s\n", len(profile.Entries), file)
+		return nil
+	})
+}
+
+func (c *CLI) runExport(file, format string) error {
+	store := hosts.NewStore(c.hostsFile, false)
+
+	hostsFile, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load hosts file: %w", err)
+	}
+
+	profile := hosts.Profile{
+		Name:        "exported",
+		Description: "Exported hosts entries",
+		Entries:     hostsFile.Entries,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	var data []byte
+	switch format {
+	case "json":
+		data, err = json.MarshalIndent(profile, "", "  ")
+	case "yaml":
+		data, err = yaml.Marshal(profile)
+	default:
+		return fmt.Errorf("unsupported format: %s", format)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to marshal export data: %w", err)
+	}
+
+	if err := os.WriteFile(file, data, 0644); err != nil {
+		return fmt.Errorf("failed to write export file: %w", err)
+	}
+
+	fmt.Printf("Exported %d entries to %s\n", len(profile.Entries), file)
+	return nil
+}
+
+func (c *CLI) runVerify() error {
+	store := hosts.NewStore(c.hostsFile, true)
+
+	issues, err := store.Verify()
+	if err != nil {
+		return fmt.Errorf("failed to verify hosts file: %w", err)
+	}
+
+	if c.jsonOutput {
+		result := map[string]interface{}{
+			"valid":  len(issues) == 0,
+			"issues": issues,
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+
+	if len(issues) == 0 {
+		fmt.Println("✓ Hosts file is valid")
+		return nil
+	}
+
+	fmt.Printf("✗ Found %d issue(s):\n\n", len(issues))
+	for i, issue := range issues {
+		fmt.Printf("%d. %s\n", i+1, issue)
+	}
+
+	return fmt.Errorf("hosts file has validation issues")
+}
+
+func (c *CLI) filterEnabled(entries []hosts.Entry) []hosts.Entry {
+	var result []hosts.Entry
+	for _, entry := range entries {
+		if !entry.Disabled {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+func (c *CLI) printEntries(entries []hosts.Entry, showAll bool) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tSTATUS\tIP\tHOSTNAMES\tCOMMENT")
+	fmt.Fprintln(w, "--\t------\t--\t---------\t-------")
+
+	for _, entry := range entries {
+		if !showAll && entry.Disabled {
+			continue
+		}
+
+		status := "enabled"
+		if entry.Disabled {
+			status = "disabled"
+		}
+
+		hostnames := strings.Join(entry.Names, ", ")
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", entry.ID, status, entry.IP, hostnames, entry.Comment)
+	}
+
+	w.Flush()
+}

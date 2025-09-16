@@ -1,0 +1,36 @@
+{
+  "name": "adblock",
+  "description": "Ad-blocking hosts entries",
+  "entries": [
+    {
+      "id": 1,
+      "ip": "0.0.0.0",
+      "names": ["ads.google.com"],
+      "comment": "Block Google ads",
+      "disabled": false
+    },
+    {
+      "id": 2,
+      "ip": "0.0.0.0",
+      "names": ["doubleclick.net", "www.doubleclick.net"],
+      "comment": "Block DoubleClick",
+      "disabled": false
+    },
+    {
+      "id": 3,
+      "ip": "0.0.0.0",
+      "names": ["facebook.com", "www.facebook.com"],
+      "comment": "Block Facebook (optional)",
+      "disabled": true
+    },
+    {
+      "id": 4,
+      "ip": "0.0.0.0",
+      "names": ["googletagmanager.com", "www.googletagmanager.com"],
+      "comment": "Block Google Tag Manager",
+      "disabled": false
+    }
+  ],
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T00:00:00Z"
+}

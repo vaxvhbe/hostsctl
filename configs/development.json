@@ -1,0 +1,29 @@
+{
+  "name": "development",
+  "description": "Development environment hosts entries",
+  "entries": [
+    {
+      "id": 1,
+      "ip": "127.0.0.1",
+      "names": ["api.local", "dev.api.local"],
+      "comment": "Local API server",
+      "disabled": false
+    },
+    {
+      "id": 2,
+      "ip": "127.0.0.1",
+      "names": ["app.local", "dev.app.local"],
+      "comment": "Local web application",
+      "disabled": false
+    },
+    {
+      "id": 3,
+      "ip": "192.168.1.100",
+      "names": ["db.local"],
+      "comment": "Development database server",
+      "disabled": false
+    }
+  ],
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T00:00:00Z"
+}

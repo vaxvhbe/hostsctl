@@ -1,0 +1,26 @@
+name: production
+description: Production environment hosts entries
+entries:
+  - id: 1
+    ip: "10.0.1.50"
+    names:
+      - api.prod.company.com
+      - api-v1.prod.company.com
+    comment: Production API server
+    disabled: false
+  - id: 2
+    ip: "10.0.1.51"
+    names:
+      - app.prod.company.com
+      - www.prod.company.com
+    comment: Production web server
+    disabled: false
+  - id: 3
+    ip: "10.0.1.52"
+    names:
+      - cache.prod.company.com
+      - redis.prod.company.com
+    comment: Production cache server
+    disabled: false
+created_at: "2024-01-01T00:00:00Z"
+updated_at: "2024-01-01T00:00:00Z"
