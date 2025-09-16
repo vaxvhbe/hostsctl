@@ -304,7 +304,6 @@ The Nix flake provides:
 - **Development shell** with Go, golangci-lint, and all tools
 - **Cross-platform** support (Linux, macOS, x86_64, ARM64)
 - **Isolated environment** with pinned dependencies
-```
 
 ### Running Tests
 

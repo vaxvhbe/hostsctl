@@ -70,8 +70,9 @@ exported.json
 exported.yaml
 *.export
 
-# Lock files
+# Lock files (but allow flake.lock for Nix)
 *.lock
+!flake.lock
 
 # Development files
 debug*.go
