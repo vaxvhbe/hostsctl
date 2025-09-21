@@ -51,19 +51,19 @@ func (fl *FileLock) LockWithTimeout(timeout time.Duration) error {
 			fl.acquired = true
 
 			pid := fmt.Sprintf("%d\n", os.Getpid())
-			file.WriteString(pid)
-			file.Sync()
+			_, _ = file.WriteString(pid)
+			_ = file.Sync()
 
 			return nil
 		}
 
 		if err != syscall.EAGAIN && err != syscall.EACCES {
-			file.Close()
+			_ = file.Close()
 			return fmt.Errorf("failed to acquire lock: %w", err)
 		}
 
 		if time.Now().After(deadline) {
-			file.Close()
+			_ = file.Close()
 			return fmt.Errorf("timeout waiting for lock")
 		}
 
@@ -85,7 +85,7 @@ func (fl *FileLock) TryLock() error {
 
 	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		if err == syscall.EAGAIN || err == syscall.EACCES {
 			return fmt.Errorf("lock is already held by another process")
 		}
@@ -96,8 +96,8 @@ func (fl *FileLock) TryLock() error {
 	fl.acquired = true
 
 	pid := fmt.Sprintf("%d\n", os.Getpid())
-	file.WriteString(pid)
-	file.Sync()
+	_, _ = file.WriteString(pid)
+	_ = file.Sync()
 
 	return nil
 }
@@ -114,8 +114,8 @@ func (fl *FileLock) Unlock() error {
 		return fmt.Errorf("failed to release lock: %w", err)
 	}
 
-	fl.file.Close()
-	os.Remove(fl.path + ".lock")
+	_ = fl.file.Close()
+	_ = os.Remove(fl.path + ".lock")
 
 	fl.file = nil
 	fl.acquired = false
@@ -136,7 +136,7 @@ func WithLock(path string, timeout time.Duration, fn func() error) error {
 	if err := lock.LockWithTimeout(timeout); err != nil {
 		return err
 	}
-	defer lock.Unlock()
+	defer func() { _ = lock.Unlock() }()
 
 	return fn()
 }

@@ -10,7 +10,7 @@
 // Usage examples:
 //
 //	hostsctl list                                    # Show active entries
-//	hostsctl add --ip 127.0.0.1 --name app.local    # Add new entry
+//	hostsctl add --ip 127.0.0.1 --name app.local     # Add new entry
 //	hostsctl backup                                  # Create backup
 //	hostsctl verify                                  # Check file validity
 //

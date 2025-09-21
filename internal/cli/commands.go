@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -19,6 +20,15 @@ type CLI struct {
 	hostsFile  string
 	noColor    bool
 	jsonOutput bool
+}
+
+// ListFilters contains filtering options for the list command.
+type ListFilters struct {
+	ShowAll       bool
+	IPFilter      string
+	CommentFilter string
+	NameFilter    string
+	StatusFilter  string
 }
 
 func NewCLI() *CLI {
@@ -53,22 +63,54 @@ func (c *CLI) buildRootCommand() *cobra.Command {
 	rootCmd.AddCommand(c.buildImportCommand())
 	rootCmd.AddCommand(c.buildExportCommand())
 	rootCmd.AddCommand(c.buildVerifyCommand())
+	rootCmd.AddCommand(c.buildProfileCommand())
+	rootCmd.AddCommand(c.buildSearchCommand())
+	rootCmd.AddCommand(c.buildCompletionCommand())
+
+	// Setup custom completions
+	c.setupCompletions(rootCmd)
 
 	return rootCmd
 }
 
 func (c *CLI) buildListCommand() *cobra.Command {
 	var showAll bool
+	var filterIP, filterComment, filterName, filterStatus string
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List hosts entries",
+		Long: `List hosts entries with optional filtering.
+
+Filters can be used to narrow down the results:
+  --ip-filter     Show entries matching IP pattern (supports wildcards)
+  --name-filter   Show entries matching hostname pattern
+  --comment-filter Show entries matching comment pattern
+  --status-filter Show entries with specific status (enabled|disabled)
+
+Examples:
+  hostsctl list --all                    # Show all entries
+  hostsctl list --ip-filter "192.168.*" # Show local network entries
+  hostsctl list --name-filter "*.local" # Show .local domains
+  hostsctl list --status enabled        # Show only enabled entries`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return c.runList(showAll)
+			filters := ListFilters{
+				ShowAll:       showAll,
+				IPFilter:      filterIP,
+				CommentFilter: filterComment,
+				NameFilter:    filterName,
+				StatusFilter:  filterStatus,
+			}
+			return c.runListWithFilters(filters)
 		},
 	}
 
 	cmd.Flags().BoolVar(&showAll, "all", false, "Show all entries including disabled ones")
+	cmd.Flags().StringVar(&filterIP, "ip-filter", "", "Filter by IP address pattern (supports wildcards)")
+	cmd.Flags().StringVar(&filterComment, "comment-filter", "", "Filter by comment pattern")
+	cmd.Flags().StringVar(&filterName, "name-filter", "", "Filter by hostname pattern")
+	cmd.Flags().StringVar(&filterStatus, "status-filter", "", "Filter by status (enabled|disabled)")
+
 	return cmd
 }
 
@@ -87,8 +129,8 @@ func (c *CLI) buildAddCommand() *cobra.Command {
 	cmd.Flags().StringVar(&ip, "ip", "", "IP address (required)")
 	cmd.Flags().StringSliceVar(&names, "name", []string{}, "Hostname(s) (required, can be specified multiple times)")
 	cmd.Flags().StringVar(&comment, "comment", "", "Comment for the entry")
-	cmd.MarkFlagRequired("ip")
-	cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("ip")
+	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
 }
@@ -174,7 +216,7 @@ func (c *CLI) buildRestoreCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&file, "file", "", "Backup file to restore from (required)")
-	cmd.MarkFlagRequired("file")
+	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
 }
@@ -192,7 +234,7 @@ func (c *CLI) buildImportCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&file, "file", "", "File to import from (required)")
 	cmd.Flags().StringVar(&format, "format", "json", "Import format (json|yaml)")
-	cmd.MarkFlagRequired("file")
+	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
 }
@@ -210,7 +252,7 @@ func (c *CLI) buildExportCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&file, "file", "", "File to export to (required)")
 	cmd.Flags().StringVar(&format, "format", "json", "Export format (json|yaml)")
-	cmd.MarkFlagRequired("file")
+	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
 }
@@ -227,7 +269,7 @@ func (c *CLI) buildVerifyCommand() *cobra.Command {
 	return cmd
 }
 
-func (c *CLI) runList(showAll bool) error {
+func (c *CLI) runListWithFilters(filters ListFilters) error {
 	store := hosts.NewStore(c.hostsFile, false)
 
 	hostsFile, err := store.Load()
@@ -235,15 +277,14 @@ func (c *CLI) runList(showAll bool) error {
 		return fmt.Errorf("failed to load hosts file: %w", err)
 	}
 
+	// Apply filters
+	filteredEntries := c.applyListFilters(hostsFile.Entries, filters)
+
 	if c.jsonOutput {
-		entries := hostsFile.Entries
-		if !showAll {
-			entries = c.filterEnabled(entries)
-		}
-		return json.NewEncoder(os.Stdout).Encode(entries)
+		return json.NewEncoder(os.Stdout).Encode(filteredEntries)
 	}
 
-	c.printEntries(hostsFile.Entries, showAll)
+	c.printEntriesFiltered(filteredEntries, filters)
 	return nil
 }
 
@@ -528,34 +569,98 @@ func (c *CLI) runVerify() error {
 	return fmt.Errorf("hosts file has validation issues")
 }
 
-func (c *CLI) filterEnabled(entries []hosts.Entry) []hosts.Entry {
-	var result []hosts.Entry
-	for _, entry := range entries {
-		if !entry.Disabled {
-			result = append(result, entry)
-		}
-	}
-	return result
-}
-
-func (c *CLI) printEntries(entries []hosts.Entry, showAll bool) {
+func (c *CLI) printEntriesFiltered(entries []hosts.Entry, filters ListFilters) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSTATUS\tIP\tHOSTNAMES\tCOMMENT")
-	fmt.Fprintln(w, "--\t------\t--\t---------\t-------")
+	_, _ = fmt.Fprintln(w, "ID\tSTATUS\tIP\tHOSTNAMES\tCOMMENT")
+	_, _ = fmt.Fprintln(w, "--\t------\t--\t---------\t-------")
 
 	for _, entry := range entries {
-		if !showAll && entry.Disabled {
-			continue
-		}
-
 		status := "enabled"
 		if entry.Disabled {
 			status = "disabled"
 		}
 
 		hostnames := strings.Join(entry.Names, ", ")
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", entry.ID, status, entry.IP, hostnames, entry.Comment)
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", entry.ID, status, entry.IP, hostnames, entry.Comment)
 	}
 
-	w.Flush()
+	_ = w.Flush()
+}
+
+// applyListFilters applies all specified filters to the entries list.
+func (c *CLI) applyListFilters(entries []hosts.Entry, filters ListFilters) []hosts.Entry {
+	var filtered []hosts.Entry
+
+	for _, entry := range entries {
+		// Filter by disabled status
+		if !filters.ShowAll && entry.Disabled {
+			continue
+		}
+
+		// Filter by status
+		if filters.StatusFilter != "" {
+			wantEnabled := strings.ToLower(filters.StatusFilter) == "enabled"
+			if entry.Disabled == wantEnabled {
+				continue
+			}
+		}
+
+		// Filter by IP
+		if filters.IPFilter != "" && !c.matchesPattern(entry.IP, filters.IPFilter) {
+			continue
+		}
+
+		// Filter by comment
+		if filters.CommentFilter != "" && !c.matchesPattern(entry.Comment, filters.CommentFilter) {
+			continue
+		}
+
+		// Filter by hostname
+		if filters.NameFilter != "" {
+			nameMatches := false
+			for _, name := range entry.Names {
+				if c.matchesPattern(name, filters.NameFilter) {
+					nameMatches = true
+					break
+				}
+			}
+			if !nameMatches {
+				continue
+			}
+		}
+
+		filtered = append(filtered, entry)
+	}
+
+	return filtered
+}
+
+// matchesPattern checks if text matches a pattern (supports wildcards).
+func (c *CLI) matchesPattern(text, pattern string) bool {
+	if pattern == "" {
+		return true
+	}
+
+	// Simple wildcard matching
+	if strings.Contains(pattern, "*") {
+		return c.matchWildcard(text, pattern)
+	}
+
+	// Simple substring match
+	return strings.Contains(strings.ToLower(text), strings.ToLower(pattern))
+}
+
+// matchWildcard performs wildcard pattern matching.
+func (c *CLI) matchWildcard(text, pattern string) bool {
+	// Convert pattern to regex
+	regexPattern := strings.ReplaceAll(pattern, "*", ".*")
+	regexPattern = "^" + regexPattern + "$"
+
+	regex, err := regexp.Compile("(?i)" + regexPattern)
+	if err != nil {
+		// Fall back to simple substring match if regex fails
+		return strings.Contains(strings.ToLower(text), strings.ToLower(strings.ReplaceAll(pattern, "*", "")))
+	}
+
+	return regex.MatchString(text)
 }

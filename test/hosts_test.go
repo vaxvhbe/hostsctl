@@ -147,14 +147,14 @@ func TestStoreWithTempFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
+	defer func() { _ = os.Remove(tempFile.Name()) }()
+	defer func() { _ = tempFile.Close() }()
 
 	if _, err := io.WriteString(tempFile, content); err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
 
-	tempFile.Close()
+	_ = tempFile.Close()
 
 	store := hosts.NewStore(tempFile.Name(), false)
 
@@ -179,7 +179,7 @@ func TestStoreWithTempFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create backup: %v", err)
 	}
-	defer os.Remove(backupInfo.Path)
+	defer func() { _ = os.Remove(backupInfo.Path) }()
 
 	if backupInfo.Size == 0 {
 		t.Error("Expected backup to have non-zero size")

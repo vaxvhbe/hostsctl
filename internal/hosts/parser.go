@@ -9,8 +9,6 @@ import (
 )
 
 var (
-	// commentRegex matches lines that are pure comments or empty lines
-	commentRegex = regexp.MustCompile(`^(\s*#.*|^\s*)$`)
 	// entryRegex matches hosts file entries, capturing disabled prefix, IP, hostnames, and comment
 	entryRegex = regexp.MustCompile(`^(\s*#\s*)?(\S+)\s+(.+?)(?:\s*#\s*(.*))?$`)
 	// hostnameRegex validates hostname format according to RFC standards
@@ -231,9 +229,9 @@ func (p *Parser) isValidIPv6Part(part string) bool {
 	}
 
 	for _, char := range part {
-		if !((char >= '0' && char <= '9') ||
-			(char >= 'a' && char <= 'f') ||
-			(char >= 'A' && char <= 'F')) {
+		if (char < '0' || char > '9') &&
+			(char < 'a' || char > 'f') &&
+			(char < 'A' || char > 'F') {
 			return false
 		}
 	}

@@ -31,7 +31,7 @@ func (s *Store) Load() (*HostsFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open hosts file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hostsFile, err := s.parser.Parse(file)
 	if err != nil {
@@ -62,7 +62,7 @@ func (s *Store) Save(hostsFile *HostsFile) error {
 	}
 
 	if err := os.Rename(tempPath, s.path); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to atomically replace hosts file: %w", err)
 	}
 
@@ -78,13 +78,13 @@ func (s *Store) createBackup() error {
 	if err != nil {
 		return err
 	}
-	defer sourceFile.Close()
+	defer func() { _ = sourceFile.Close() }()
 
 	backupFile, err := os.Create(backupPath)
 	if err != nil {
 		return err
 	}
-	defer backupFile.Close()
+	defer func() { _ = backupFile.Close() }()
 
 	_, err = io.Copy(backupFile, sourceFile)
 	return err
@@ -96,7 +96,7 @@ func (s *Store) writeTemp(tempPath, content string) error {
 	if err != nil {
 		return err
 	}
-	defer tempFile.Close()
+	defer func() { _ = tempFile.Close() }()
 
 	if _, err := tempFile.WriteString(content); err != nil {
 		return err
@@ -126,7 +126,7 @@ func (s *Store) Backup(outputPath string) (*BackupInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open source file: %w", err)
 	}
-	defer sourceFile.Close()
+	defer func() { _ = sourceFile.Close() }()
 
 	stat, err := sourceFile.Stat()
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *Store) Backup(outputPath string) (*BackupInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backup file: %w", err)
 	}
-	defer backupFile.Close()
+	defer func() { _ = backupFile.Close() }()
 
 	_, err = io.Copy(backupFile, sourceFile)
 	if err != nil {
@@ -163,7 +163,7 @@ func (s *Store) Restore(backupPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open backup file: %w", err)
 	}
-	defer backupFile.Close()
+	defer func() { _ = backupFile.Close() }()
 
 	hostsFile, err := s.parser.Parse(backupFile)
 	if err != nil {
