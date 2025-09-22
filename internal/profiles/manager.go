@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vaxvhbe/hostsctl/internal/hosts"
+	"github.com/vaxvhbe/hostsctl/pkg"
 	"gopkg.in/yaml.v3"
 )
 
@@ -69,7 +70,7 @@ func getConfigDir() (string, error) {
 
 // ensureConfigDir creates the configuration directory if it doesn't exist.
 func (m *Manager) ensureConfigDir() error {
-	return os.MkdirAll(m.configDir, 0755)
+	return os.MkdirAll(m.configDir, 0750)
 }
 
 // SaveProfile saves a profile to persistent storage.
@@ -91,7 +92,7 @@ func (m *Manager) SaveProfile(profile *hosts.Profile) error {
 		return fmt.Errorf("failed to marshal profile: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write profile file: %w", err)
 	}
 
@@ -106,7 +107,12 @@ func (m *Manager) LoadProfile(name string) (*hosts.Profile, error) {
 
 	filePath := m.getProfilePath(name)
 
-	data, err := os.ReadFile(filePath)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path validated above
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("profile '%s' not found", name)
@@ -178,13 +184,18 @@ func (m *Manager) ListProfiles() ([]*ProfileMetadata, error) {
 func (m *Manager) getProfileMetadata(name string) (*ProfileMetadata, error) {
 	filePath := m.getProfilePath(name)
 
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return nil, err
 	}
 
 	// Read just enough to get metadata
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path validated above
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +285,7 @@ func (m *Manager) ExportProfile(name, outputPath, format string) error {
 		return fmt.Errorf("failed to marshal profile: %w", err)
 	}
 
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := os.WriteFile(outputPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write export file: %w", err)
 	}
 
@@ -283,7 +294,12 @@ func (m *Manager) ExportProfile(name, outputPath, format string) error {
 
 // ImportProfile imports a profile from a file and saves it to the profile store.
 func (m *Manager) ImportProfile(filePath, format string, overwrite bool) (*hosts.Profile, error) {
-	data, err := os.ReadFile(filePath)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(filePath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+
+	data, err := os.ReadFile(filePath) // #nosec G304 -- path validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read import file: %w", err)
 	}

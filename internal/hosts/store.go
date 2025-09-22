@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/vaxvhbe/hostsctl/pkg"
 )
 
 // Store handles atomic reading and writing of hosts files with safety features.
@@ -80,7 +82,12 @@ func (s *Store) createBackup() error {
 	}
 	defer func() { _ = sourceFile.Close() }()
 
-	backupFile, err := os.Create(backupPath)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(backupPath); err != nil {
+		return fmt.Errorf("invalid backup path: %w", err)
+	}
+
+	backupFile, err := os.Create(backupPath) // #nosec G304 -- path validated above
 	if err != nil {
 		return err
 	}
@@ -92,7 +99,12 @@ func (s *Store) createBackup() error {
 
 // writeTemp writes content to a temporary file with fsync for durability.
 func (s *Store) writeTemp(tempPath, content string) error {
-	tempFile, err := os.Create(tempPath)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(tempPath); err != nil {
+		return fmt.Errorf("invalid temp path: %w", err)
+	}
+
+	tempFile, err := os.Create(tempPath) // #nosec G304 -- path validated above
 	if err != nil {
 		return err
 	}
@@ -133,7 +145,12 @@ func (s *Store) Backup(outputPath string) (*BackupInfo, error) {
 		return nil, fmt.Errorf("failed to get source file info: %w", err)
 	}
 
-	backupFile, err := os.Create(outputPath)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(outputPath); err != nil {
+		return nil, fmt.Errorf("invalid output path: %w", err)
+	}
+
+	backupFile, err := os.Create(outputPath) // #nosec G304 -- path validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backup file: %w", err)
 	}
@@ -159,7 +176,12 @@ func (s *Store) Restore(backupPath string) error {
 		return err
 	}
 
-	backupFile, err := os.Open(backupPath)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(backupPath); err != nil {
+		return fmt.Errorf("invalid backup path: %w", err)
+	}
+
+	backupFile, err := os.Open(backupPath) // #nosec G304 -- path validated above
 	if err != nil {
 		return fmt.Errorf("failed to open backup file: %w", err)
 	}

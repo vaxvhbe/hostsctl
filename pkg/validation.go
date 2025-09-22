@@ -3,7 +3,9 @@
 package pkg
 
 import (
+	"fmt"
 	"net"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -259,4 +261,37 @@ func NormalizeIP(ip string) string {
 // This ensures consistent comparison and storage.
 func NormalizeHostname(hostname string) string {
 	return strings.ToLower(strings.TrimSpace(hostname))
+}
+
+// ValidateSecurePath validates a file path to prevent directory traversal attacks (CWE-22).
+// It checks for path traversal patterns and ensures the path is safe to use.
+func ValidateSecurePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+
+	// Check for null bytes which can be used to bypass security checks
+	if strings.Contains(path, "\x00") {
+		return fmt.Errorf("path contains null byte: %s", path)
+	}
+
+	// Check for path traversal attempts before cleaning
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path contains directory traversal pattern: %s", path)
+	}
+
+	// Additional checks for encoded traversal attempts
+	if strings.Contains(path, "%2e%2e") || strings.Contains(path, "%2E%2E") {
+		return fmt.Errorf("path contains encoded traversal pattern: %s", path)
+	}
+
+	// Clean the path to resolve . elements and normalize
+	cleanPath := filepath.Clean(path)
+
+	// After cleaning, ensure no .. elements remain (shouldn't happen if we caught them above)
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("path resolves to traversal pattern: %s", path)
+	}
+
+	return nil
 }

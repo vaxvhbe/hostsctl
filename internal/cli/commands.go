@@ -462,7 +462,12 @@ func (c *CLI) runRestore(file string) error {
 }
 
 func (c *CLI) runImport(file, format string) error {
-	data, err := os.ReadFile(file)
+	// Validate file path to prevent directory traversal
+	if err := pkg.ValidateSecurePath(file); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
+	data, err := os.ReadFile(file) // #nosec G304 -- path validated above
 	if err != nil {
 		return fmt.Errorf("failed to read import file: %w", err)
 	}
@@ -532,7 +537,7 @@ func (c *CLI) runExport(file, format string) error {
 		return fmt.Errorf("failed to marshal export data: %w", err)
 	}
 
-	if err := os.WriteFile(file, data, 0644); err != nil {
+	if err := os.WriteFile(file, data, 0600); err != nil {
 		return fmt.Errorf("failed to write export file: %w", err)
 	}
 
