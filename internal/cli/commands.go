@@ -13,7 +13,7 @@ import (
 	"github.com/vaxvhbe/hostsctl/internal/hosts"
 	"github.com/vaxvhbe/hostsctl/internal/lock"
 	"github.com/vaxvhbe/hostsctl/pkg"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
 type CLI struct {

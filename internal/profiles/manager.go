@@ -14,7 +14,7 @@ import (
 
 	"github.com/vaxvhbe/hostsctl/internal/hosts"
 	"github.com/vaxvhbe/hostsctl/pkg"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // Manager handles persistent storage and retrieval of hostname profiles.

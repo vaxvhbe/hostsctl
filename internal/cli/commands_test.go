@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"unicode"
 
 	"github.com/vaxvhbe/hostsctl/internal/hosts"
 )
@@ -232,7 +231,7 @@ func TestCLI_buildCommands(t *testing.T) {
 			cmd := tt.builder()
 			if cmd == nil {
 				// Simple title case conversion without strings.Title (deprecated)
-				titleName := string(unicode.ToUpper(rune(tt.name[0]))) + tt.name[1:]
+				titleName := string(rune(tt.name[0])-32) + tt.name[1:]
 				t.Errorf("build%sCommand() returned nil", titleName)
 			}
 		})

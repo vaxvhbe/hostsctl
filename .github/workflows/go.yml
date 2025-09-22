@@ -17,12 +17,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
       - name: Cache Go modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -45,7 +45,7 @@ jobs:
 
       - name: Install golangci-lint
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.5.0
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Lint
@@ -55,7 +55,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
           flags: unittests
@@ -89,7 +89,7 @@ jobs:
           go build -ldflags "-X main.version=${VERSION}" -o dist/${BINARY_NAME}-${GOOS}-${GOARCH} ./cmd/hostsctl
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: hostsctl-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/hostsctl-${{ matrix.goos }}-${{ matrix.goarch }}*
@@ -145,13 +145,13 @@ jobs:
 
       - name: Install Gosec
         run: |
-          curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.18.2
+          curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.22.9
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Run Gosec Security Scanner
         run: gosec -fmt sarif -out gosec.sarif ./...
 
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif
